@@ -1,4 +1,4 @@
-#Kai Matton Code
+#Kai Matton Code - Fixed Version
 import time
 
 def parse_dimacs(filepath):
@@ -25,16 +25,21 @@ def parse_dimacs(filepath):
     return num_nodes, edges, adj
 
 def bellman_ford(start, end, edges, num_nodes):
-
+    """
+    Bellman-Ford algorithm for shortest path.
+    
+    Returns:
+        dist: array of shortest distances from start node
+        pred: array of predecessors for path reconstruction
+        elapsed: runtime in seconds
+        has_negative_cycle: boolean indicating if a negative cycle was detected
+    """
     INF = float('inf')
     dist = [INF] * (num_nodes + 1)
     pred = [None] * (num_nodes + 1)
     dist[start] = 0
 
     start_time = time.perf_counter()
-
-    # Track when end node distance last changed
-    previous_end_dist = INF
 
     # Relax edges up to (num_nodes - 1) times
     for iteration in range(num_nodes - 1):
@@ -47,20 +52,22 @@ def bellman_ford(start, end, edges, num_nodes):
                 pred[v] = u
                 changed = True
 
-        # Check if we've found the shortest path to end node
-        if dist[end] != INF and dist[end] == previous_end_dist:
-            # End node distance hasn't changed - we've found shortest path
+        # If no edges were relaxed, algorithm is done
+        # This is the ONLY safe early termination condition
+        if not changed:
+            print(f"Converged early at iteration {iteration + 1}")
             break
 
-        previous_end_dist = dist[end]
-
-        # If no edges were relaxed, algorithm is done
-        if not changed:
+    # Check for negative cycles (n-th iteration)
+    has_negative_cycle = False
+    for u, v, w in edges:
+        if dist[u] != INF and dist[u] + w < dist[v]:
+            has_negative_cycle = True
             break
 
     elapsed = time.perf_counter() - start_time
 
-    return dist, pred, elapsed
+    return dist, pred, elapsed, has_negative_cycle
 
 
 def reconstruct_path(pred, start, end):
@@ -84,6 +91,36 @@ def reconstruct_path(pred, start, end):
     return path if path and path[0] == start else []
 
 
+def verify_path_cost(path, adj):
+    """
+    Verify the total cost of a path by summing edge weights.
+    
+    Returns:
+        total_cost: sum of edge weights along the path
+        valid: boolean indicating if all edges in the path exist
+    """
+    total_cost = 0
+    valid = True
+    
+    for i in range(len(path) - 1):
+        u = path[i]
+        v = path[i+1]
+        # Find edge weight from adjacency list
+        edge_found = False
+        for neighbor, w in adj.get(u, []):
+            if neighbor == v:
+                total_cost += w
+                edge_found = True
+                break
+        
+        if not edge_found:
+            valid = False
+            print(f"Warning: Edge {u} -> {v} not found in graph!")
+            break
+    
+    return total_cost, valid
+
+
 if __name__ == '__main__':
     filepath = 'USA-road-d.NY.gr'
 
@@ -101,33 +138,50 @@ if __name__ == '__main__':
     print(f"Finding shortest path from node {start} to node {end}...")
     print("(This may take a while with Bellman-Ford...)")
 
-    dist_bf, pred_bf, runtime_bf = bellman_ford(start, end, edges, num_nodes)
+    dist_bf, pred_bf, runtime_bf, has_neg_cycle = bellman_ford(start, end, edges, num_nodes)
 
     print(f"\nTime to find shortest path: {runtime_bf:.6f} seconds")
 
+    # Check for negative cycle
+    if has_neg_cycle:
+        print("\n⚠️  WARNING: Graph contains a negative cycle!")
+        print("Shortest path distances are not well-defined.")
+    else:
+        print("✓ No negative cycles detected")
+
+    # Display results
     if dist_bf[end] < float('inf'):
         path_bf = reconstruct_path(pred_bf, start, end)
 
-        # Compute total path cost explicitly
-        total_cost = 0
-        for i in range(len(path_bf) - 1):
-            u = path_bf[i]
-            v = path_bf[i+1]
-            # Find edge weight from adjacency list
-            for neighbor, w in adj.get(u, []):
-                if neighbor == v:
-                    total_cost += w
-                    break
+        # Verify path cost
+        total_cost, path_valid = verify_path_cost(path_bf, adj)
 
-        print(f"Shortest distance (from dist array): {dist_bf[end]}")
-        print(f"Total path cost (sum of edge weights along path): {total_cost}")
+        print(f"\nShortest distance (from dist array): {dist_bf[end]}")
+        print(f"Total path cost (sum of edge weights): {total_cost}")
+        
+        # Sanity check: these should match
+        if abs(dist_bf[end] - total_cost) > 1e-6:
+            print("⚠️  WARNING: Distance mismatch! Algorithm may have a bug.")
+        else:
+            print("✓ Distance verification passed")
+        
+        if not path_valid:
+            print("⚠️  WARNING: Path contains invalid edges!")
+        
         print(f"Path length (number of nodes): {len(path_bf)}")
         print(f"Path: {path_bf[:10]}{'...' if len(path_bf) > 10 else ''}")
     else:
-        print("Target node is unreachable from start node")
+        print("\n❌ Target node is unreachable from start node")
 
-    # Comparison / summary
+    # Summary
     print(f"\n{'='*60}")
-    print("COMPARISON")
+    print("SUMMARY")
     print(f"{'='*60}")
-    print(f"Bellman-Ford time:  {runtime_bf:.6f} seconds")
+    print(f"Algorithm:          Bellman-Ford")
+    print(f"Runtime:            {runtime_bf:.6f} seconds")
+    print(f"Nodes explored:     {num_nodes}")
+    print(f"Total edges:        {len(edges)}")
+    if dist_bf[end] < float('inf'):
+        print(f"Shortest distance:  {dist_bf[end]}")
+        print(f"Path hops:          {len(path_bf) - 1}")
+    print(f"{'='*60}")
